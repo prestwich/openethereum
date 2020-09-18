@@ -32,17 +32,15 @@ Fast and feature-rich multi-network Ethereum client.
 
 ## 1. Description <a id="chapter-001"></a>
 
-**Built for mission-critical use**: Miners, service providers, and exchanges need fast synchronisation and maximum uptime. OpenEthereum provides the core infrastructure essential for speedy and reliable services.
-
-- Clean, modular codebase for easy customisation
-- Advanced CLI-based client
-- Minimal memory and storage footprint
-- Synchronise in hours, not days with Warp Sync
-- Modular for light integration into your service or product
+OpenEthereum is the ParityTech Parity ethereum client in its _minimal maintaince mode_, this means that:
+- code related to non-mainstream features has been removed 
+- will be updated to the last ethereum mainnet network upgrades
+- will support mainnet, kovan and xdai network mainstream chains
+- only critical bugs will be fixed, no performance improvements or new features are planned
 
 ## 2. Technical Overview <a id="chapter-002"></a>
 
-OpenEthereum's goal is to be the fastest, lightest, and most secure Ethereum client. We are developing OpenEthereum using the **Rust programming language**. OpenEthereum is licensed under the GPLv3 and can be used for all your Ethereum needs.
+We are developing OpenEthereum using the **Rust programming language**. OpenEthereum is licensed under the GPLv3 and can be used for all your Ethereum needs.
 
 By default, OpenEthereum runs a JSON-RPC HTTP server on port `:8545` and a Web-Sockets server on port `:8546`. This is fully configurable and supports a number of APIs.
 
@@ -222,17 +220,9 @@ Caching, Importing Blocks, and Block Information
     ```bash
     evm
     ```
-  * OpenEthereum Light Client Implementation
-    ```bash
-    ethcore-light
-    ```
   * Smart Contract based Node Filter, Manage Permissions of Network Connections
     ```bash
     node-filter
-    ```
-  * Private Transactions
-    ```bash
-    ethcore-private-tx
     ```
   * OpenEthereum Client & Network Service Creation & Registration with the I/O Subsystem
     ```bash
@@ -249,14 +239,6 @@ Caching, Importing Blocks, and Block Information
   * OpenEthereum Virtual Machines (VM) Support Library
     ```bash
     vm
-    ```
-  * OpenEthereum WASM Interpreter
-    ```bash
-    wasm
-    ```
-  * OpenEthereum WASM Test Runner
-    ```bash
-    pwasm-run-test
     ```
   * OpenEthereum EVM Implementation
     ```bash
@@ -282,10 +264,6 @@ Caching, Importing Blocks, and Block Information
   ```bash
   parity-rpc
   ```
-* OpenEthereum Updater Service
-  ```bash
-  parity-updater parity-hash-fetch
-  ```
 * OpenEthereum Core Libraries (`util`)
   ```bash
   accounts-bloom blooms-db dir eip-712 fake-fetch fastmap fetch ethcore-io
@@ -307,7 +285,6 @@ In addition to the OpenEthereum client, there are additional tools in this repos
 
 The following tools are available in a separate repository:
 - [ethabi](https://github.com/openethereum/ethabi) - OpenEthereum Encoding of Function Calls. [Docs here](https://crates.io/crates/ethabi)
-- [whisper](https://github.com/openethereum/whisper) - OpenEthereum Whisper-v2 PoC Implementation.
 
 ## 7. Contributing <a id="chapter-007"></a>
 
