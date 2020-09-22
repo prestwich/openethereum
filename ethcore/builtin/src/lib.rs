@@ -44,6 +44,13 @@ use eth_pairings::public_interface::eip2537::{
 	SCALAR_BYTE_LENGTH
 };
 
+use eth_pairings::public_interface::eip2539::{
+	EIP2539Executor,
+	SERIALIZED_G1_POINT_BYTE_LENGTH as EIP2539_SERIALIZED_G1_POINT_BYTE_LENGTH,
+	SERIALIZED_G2_POINT_BYTE_LENGTH as EIP2539_SERIALIZED_G2_POINT_BYTE_LENGTH,
+	// SCALAR_BYTE_LENGTH  // same as eip2537
+};
+
 /// Native implementation of a built-in contract.
 pub trait Implementation: Send + Sync {
 	/// execute this built-in on the given input, writing to the given output.
@@ -87,6 +94,10 @@ enum Pricing {
 	Bls12ConstOperations(Bls12ConstOperations),
 	Bls12MultiexpG1(Bls12MultiexpPricerG1),
 	Bls12MultiexpG2(Bls12MultiexpPricerG2),
+	Eip2539Pairing(Eip2539PairingPricer),
+	Eip2539ConstOperations(Eip2539ConstOperations),
+	Eip2539MultiexpG1(Eip2539MultiexpPricerG1),
+	Eip2539MultiexpG2(Eip2539MultiexpPricerG2),	
 }
 
 impl Pricer for Pricing {
@@ -101,6 +112,10 @@ impl Pricer for Pricing {
 			Pricing::Bls12ConstOperations(inner) => inner.cost(input),
 			Pricing::Bls12MultiexpG1(inner) => inner.cost(input),
 			Pricing::Bls12MultiexpG2(inner) => inner.cost(input),
+			Pricing::Eip2539Pairing(inner) => inner.cost(input),
+			Pricing::Eip2539ConstOperations(inner) => inner.cost(input),
+			Pricing::Eip2539MultiexpG1(inner) => inner.cost(input),
+			Pricing::Eip2539MultiexpG2(inner) => inner.cost(input),
 		}
 	}
 }
@@ -333,6 +348,115 @@ pub type Bls12MultiexpPricerG1 = Bls12MultiexpPricer<G1Marker>;
 /// Multiexp pricer in G2
 pub type Bls12MultiexpPricerG2 = Bls12MultiexpPricer<G2Marker>;
 
+/// Eip2539 pairing price
+#[derive(Debug, Copy, Clone)]
+struct Eip2539PairingPrice {
+	base: u64,
+	pair: u64,
+}
+
+/// Eip2359 bls12_pairing pricing model. This computes a price using a base cost and a cost per pair.
+#[derive(Debug)]
+struct Eip2539PairingPricer {
+	price: Eip2539PairingPrice,
+}
+
+/// Pricing for constant Eip2539 operations (ADD and MUL in G1 and G2, as well as mappings)
+#[derive(Debug, Copy, Clone)]
+pub struct Eip2539ConstOperations {
+	/// Fixed price.
+	pub price: u64,
+}
+
+/// Discount table for multiexponentiation (Peppinger algorithm)
+/// Later on is normalized using the divisor
+pub const EIP2539_MULTIEXP_DISCOUNTS_TABLE: [[u64; 2]; EIP2539_MULTIEXP_PAIRS_FOR_MAX_DISCOUNT] = [
+	[1, 1200], [2, 888], [3, 764], [4, 641], [5, 594], [6, 547], [7, 500], [8, 453], 
+	[9, 438], [10, 423], [11, 408], [12, 394], [13, 379], [14, 364], [15, 349], [16, 334], 
+	[17, 330], [18, 326], [19, 322], [20, 318], [21, 314], [22, 310], [23, 306], [24, 302], 
+	[25, 298], [26, 294], [27, 289], [28, 285], [29, 281], [30, 277], [31, 273], [32, 269], 
+	[33, 268], [34, 266], [35, 265], [36, 263], [37, 262], [38, 260], [39, 259], [40, 257], 
+	[41, 256], [42, 254], [43, 253], [44, 251], [45, 250], [46, 248], [47, 247], [48, 245], 
+	[49, 244], [50, 242], [51, 241], [52, 239], [53, 238], [54, 236], [55, 235], [56, 233], 
+	[57, 232], [58, 231], [59, 229], [60, 228], [61, 226], [62, 225], [63, 223], [64, 222], 
+	[65, 221], [66, 220], [67, 219], [68, 219], [69, 218], [70, 217], [71, 216], [72, 216], 
+	[73, 215], [74, 214], [75, 213], [76, 213], [77, 212], [78, 211], [79, 211], [80, 210], 
+	[81, 209], [82, 208], [83, 208], [84, 207], [85, 206], [86, 205], [87, 205], [88, 204], 
+	[89, 203], [90, 202], [91, 202], [92, 201], [93, 200], [94, 199], [95, 199], [96, 198], 
+	[97, 197], [98, 196], [99, 196], [100, 195], [101, 194], [102, 193], [103, 193], [104, 192], 
+	[105, 191], [106, 191], [107, 190], [108, 189], [109, 188], [110, 188], [111, 187], [112, 186], 
+	[113, 185], [114, 185], [115, 184], [116, 183], [117, 182], [118, 182], [119, 181], [120, 180], 
+	[121, 179], [122, 179], [123, 178], [124, 177], [125, 176], [126, 176], [127, 175], [128, 174]
+];
+
+/// Max discount allowed
+pub const EIP2539_MULTIEXP_MAX_DISCOUNT: u64 = 174;
+/// Max discount is reached at this number of pairs
+pub const EIP2539_MULTIEXP_PAIRS_FOR_MAX_DISCOUNT: usize = 128;
+/// Divisor for discounts table
+pub const EIP2539_MULTIEXP_DISCOUNT_DIVISOR: u64 = 1000;
+/// Length of single G1 + G2 points pair for pairing operation
+pub const EIP2539_G1_AND_G2_PAIR_LEN: usize = EIP2539_SERIALIZED_G1_POINT_BYTE_LENGTH + EIP2539_SERIALIZED_G2_POINT_BYTE_LENGTH;
+
+/// Marker trait that indicated that we perform operations in G1
+#[derive(Clone, Copy, Debug)]
+pub struct Eip2539G1Marker;
+impl PointScalarLength for Eip2539G1Marker {
+	const LENGTH: usize = EIP2539_SERIALIZED_G1_POINT_BYTE_LENGTH + SCALAR_BYTE_LENGTH;
+}
+/// Marker trait that indicated that we perform operations in G2
+#[derive(Clone, Copy, Debug)]
+pub struct Eip2539G2Marker;
+impl PointScalarLength for Eip2539G2Marker {
+	const LENGTH: usize = EIP2539_SERIALIZED_G2_POINT_BYTE_LENGTH + SCALAR_BYTE_LENGTH;
+}
+
+
+/// Pricing for constant Eip2539 operations (ADD and MUL in G1 and G2)
+#[derive(Debug, Copy, Clone)]
+pub struct Eip2539MultiexpPricer<P: PointScalarLength> {
+	/// Base const of the operation (G1 or G2 multiplication)
+	pub base_price: Eip2539ConstOperations,
+
+	_marker: std::marker::PhantomData<P>
+}
+
+impl Pricer for Eip2539ConstOperations {
+	fn cost(&self, _input: &[u8]) -> U256 {
+		self.price.into()
+	}
+}
+
+impl Pricer for Eip2539PairingPricer {
+	fn cost(&self, input: &[u8]) -> U256 {
+		U256::from(self.price.base) + U256::from(self.price.pair) * U256::from(input.len() / EIP2539_G1_AND_G2_PAIR_LEN)
+	}
+}
+
+impl<P: PointScalarLength> Pricer for Eip2539MultiexpPricer<P> {
+	fn cost(&self, input: &[u8]) -> U256 {
+		let num_pairs = input.len() / P::LENGTH;
+		if num_pairs == 0 {
+			return U256::zero();
+		}
+		let discount = if num_pairs > EIP2539_MULTIEXP_PAIRS_FOR_MAX_DISCOUNT {
+			EIP2539_MULTIEXP_MAX_DISCOUNT
+		} else {
+			let table_entry = EIP2539_MULTIEXP_DISCOUNTS_TABLE[num_pairs - 1];
+			table_entry[1]
+		};
+		U256::from(self.base_price.price) * U256::from(num_pairs) * U256::from(discount) / U256::from(EIP2539_MULTIEXP_DISCOUNT_DIVISOR)
+	}
+}
+
+/// Multiexp pricer in G1
+pub type Eip2539MultiexpPricerG1 = Eip2539MultiexpPricer<Eip2539G1Marker>;
+
+/// Multiexp pricer in G2
+pub type Eip2539MultiexpPricerG2 = Eip2539MultiexpPricer<Eip2539G2Marker>;
+
+
+
 /// Pricing scheme, execution definition, and activation block for a built-in contract.
 ///
 /// Call `cost` to compute cost for the given input, `execute` to execute the contract
@@ -455,6 +579,40 @@ impl From<ethjson::spec::builtin::Pricing> for Pricing {
 					}
 				)
 			},
+
+			// TODO: differentiate
+			ethjson::spec::builtin::Pricing::Bls12ConstOperations(pricer) => {
+				Pricing::Bls12ConstOperations(Bls12ConstOperations {
+					price: pricer.price
+				})
+			},
+			ethjson::spec::builtin::Pricing::Bls12Pairing(pricer) => {
+				Pricing::Bls12Pairing(Bls12PairingPricer {
+						price : Bls12PairingPrice {
+							base: pricer.base,
+							pair: pricer.pair
+						}
+					}
+				)
+			},
+			ethjson::spec::builtin::Pricing::Bls12G1Multiexp(pricer) => {
+				Pricing::Bls12MultiexpG1(Bls12MultiexpPricerG1 {
+						base_price: Bls12ConstOperations {
+							price: pricer.base,
+						},
+						_marker: std::marker::PhantomData
+					}
+				)
+			},
+			ethjson::spec::builtin::Pricing::Bls12G2Multiexp(pricer) => {
+				Pricing::Eip2539MultiexpG2(Eip2539MultiexpPricerG2 {
+						base_price: Eip2539ConstOperations {
+							price: pricer.base
+						},
+						_marker: std::marker::PhantomData
+					}
+				)
+			},			
 		}
 	}
 }
@@ -497,6 +655,22 @@ enum EthereumBuiltin {
 	Bls12MapFpToG1(Bls12MapFpToG1),
 	/// bls12_381 fp2 to g2 mapping
 	Bls12MapFp2ToG2(Bls12MapFp2ToG2),
+	/// bls12_377 addition in g1
+	Eip2539G1Add(Eip2539G1Add),
+	/// bls12_377 multiplication in g1
+	Eip2539G1Mul(Eip2539G1Mul),
+	/// bls12_377 multiexponentiation in g1
+	Eip2539G1MultiExp(Eip2539G1MultiExp),
+	/// bls12_377 addition in g2
+	Eip2539G2Add(Eip2539G2Add),
+	/// bls12_377 multiplication in g2
+	Eip2539G2Mul(Eip2539G2Mul),
+	/// bls12_377 multiexponentiation in g2
+	Eip2539G2MultiExp(Eip2539G2MultiExp),
+	/// bls12_377 pairing
+	Eip2539Pairing(Eip2539Pairing),
+		
+	
 }
 
 impl FromStr for EthereumBuiltin {
@@ -522,6 +696,13 @@ impl FromStr for EthereumBuiltin {
 			"bls12_381_pairing" => Ok(EthereumBuiltin::Bls12Pairing(Bls12Pairing)),
 			"bls12_381_fp_to_g1" => Ok(EthereumBuiltin::Bls12MapFpToG1(Bls12MapFpToG1)),
 			"bls12_381_fp2_to_g2" => Ok(EthereumBuiltin::Bls12MapFp2ToG2(Bls12MapFp2ToG2)),
+			"bls12_377_g1_add" => Ok(EthereumBuiltin::Eip2539G1Add(Eip2539G1Add)),
+			"bls12_377_g1_mul" => Ok(EthereumBuiltin::Eip2539G1Mul(Eip2539G1Mul)),
+			"bls12_377_g1_multiexp" => Ok(EthereumBuiltin::Eip2539G1MultiExp(Eip2539G1MultiExp)),
+			"bls12_377_g2_add" => Ok(EthereumBuiltin::Eip2539G2Add(Eip2539G2Add)),
+			"bls12_377_g2_mul" => Ok(EthereumBuiltin::Eip2539G2Mul(Eip2539G2Mul)),
+			"bls12_377_g2_multiexp" => Ok(EthereumBuiltin::Eip2539G2MultiExp(Eip2539G2MultiExp)),
+			"bls12_377_pairing" => Ok(EthereumBuiltin::Eip2539Pairing(Eip2539Pairing)),		
 			_ => return Err(EthcoreError::Msg(format!("invalid builtin name: {}", name))),
 		}
 	}
@@ -548,6 +729,15 @@ impl Implementation for EthereumBuiltin {
 			EthereumBuiltin::Bls12Pairing(inner) => inner.execute(input, output),
 			EthereumBuiltin::Bls12MapFpToG1(inner) => inner.execute(input, output),
 			EthereumBuiltin::Bls12MapFp2ToG2(inner) => inner.execute(input, output),
+			EthereumBuiltin::Eip2539G1Add(inner) => inner.execute(input, output),
+			EthereumBuiltin::Eip2539G1Mul(inner) => inner.execute(input, output),
+			EthereumBuiltin::Eip2539G1MultiExp(inner) => inner.execute(input, output),
+			EthereumBuiltin::Eip2539G2Add(inner) => inner.execute(input, output),
+			EthereumBuiltin::Eip2539G2Mul(inner) => inner.execute(input, output),
+			EthereumBuiltin::Eip2539G2MultiExp(inner) => inner.execute(input, output),
+			EthereumBuiltin::Eip2539Pairing(inner) => inner.execute(input, output),
+		
+		
 		}
 	}
 }
@@ -623,6 +813,34 @@ pub struct Bls12MapFpToG1;
 #[derive(Debug)]
 /// The Bls12MapFp2ToG2 builtin.
 pub struct Bls12MapFp2ToG2;
+
+#[derive(Debug)]
+/// The Eip2539G1Add builtin.
+pub struct Eip2539G1Add;
+
+#[derive(Debug)]
+/// The Eip2539G1Mul builtin.
+pub struct Eip2539G1Mul;
+
+#[derive(Debug)]
+/// The Eip2539G1MultiExp builtin.
+pub struct Eip2539G1MultiExp;
+
+#[derive(Debug)]
+/// The Eip2539G2Add builtin.
+pub struct Eip2539G2Add;
+
+#[derive(Debug)]
+/// The Eip2539G2Mul builtin.
+pub struct Eip2539G2Mul;
+
+#[derive(Debug)]
+/// The Eip2539G2MultiExp builtin.
+pub struct Eip2539G2MultiExp;
+
+#[derive(Debug)]
+/// The Eip2539Pairing builtin.
+pub struct Eip2539Pairing;
 
 impl Implementation for Identity {
 	fn execute(&self, input: &[u8], output: &mut BytesRef) -> Result<(), &'static str> {
@@ -1105,6 +1323,139 @@ impl Implementation for Bls12MapFp2ToG2 {
 				trace!(target: "builtin", "Bls12MapFp2ToG2 error: {:?}", e);
 
 				Err("Bls12MapFp2ToG2 error")
+			}
+		}
+	}
+}
+
+impl Implementation for Eip2539G1Add {
+	fn execute(&self, input: &[u8], output: &mut BytesRef) -> Result<(), &'static str> {
+		let result = EIP2539Executor::g1_add(input);
+
+		match result {
+			Ok(result_bytes) => {
+				output.write(0, &result_bytes[..]);
+
+				Ok(())
+			},
+			Err(e) => {
+				trace!(target: "builtin", "Eip2539G1Add error: {:?}", e);
+
+				Err("Eip2539G1Add error")
+			}
+		}
+	}
+}
+
+impl Implementation for Eip2539G1Mul {
+	fn execute(&self, input: &[u8], output: &mut BytesRef) -> Result<(), &'static str> {
+		let result = EIP2539Executor::g1_mul(input);
+
+		match result {
+			Ok(result_bytes) => {
+				output.write(0, &result_bytes[..]);
+
+				Ok(())
+			},
+			Err(e) => {
+				trace!(target: "builtin", "Eip2539G1Mul error: {:?}", e);
+
+				Err("Eip2539G1Mul error")
+			}
+		}
+	}
+}
+
+impl Implementation for Eip2539G1MultiExp {
+	fn execute(&self, input: &[u8], output: &mut BytesRef) -> Result<(), &'static str> {
+		let result = EIP2539Executor::g1_multiexp(input);
+
+		match result {
+			Ok(result_bytes) => {
+				output.write(0, &result_bytes[..]);
+
+				Ok(())
+			},
+			Err(e) => {
+				trace!(target: "builtin", "Eip2539G1MultiExp error: {:?}", e);
+
+				Err("Eip2539G1MultiExp error")
+			}
+		}
+	}
+}
+
+impl Implementation for Eip2539G2Add {
+	fn execute(&self, input: &[u8], output: &mut BytesRef) -> Result<(), &'static str> {
+		let result = EIP2539Executor::g2_add(input);
+
+		match result {
+			Ok(result_bytes) => {
+				output.write(0, &result_bytes[..]);
+
+				Ok(())
+			},
+			Err(e) => {
+				trace!(target: "builtin", "Eip2539G2Add error: {:?}", e);
+
+				Err("Eip2539G2Add error")
+			}
+		}
+	}
+}
+
+impl Implementation for Eip2539G2Mul {
+	fn execute(&self, input: &[u8], output: &mut BytesRef) -> Result<(), &'static str> {
+		let result = EIP2539Executor::g2_mul(input);
+
+		match result {
+			Ok(result_bytes) => {
+				output.write(0, &result_bytes[..]);
+
+				Ok(())
+			},
+			Err(e) => {
+				trace!(target: "builtin", "Eip2539G2Mul error: {:?}", e);
+
+				Err("Eip2539G2Mul error")
+			}
+		}
+	}
+}
+
+impl Implementation for Eip2539G2MultiExp {
+	fn execute(&self, input: &[u8], output: &mut BytesRef) -> Result<(), &'static str> {
+		let result = EIP2539Executor::g2_multiexp(input);
+
+		match result {
+			Ok(result_bytes) => {
+				output.write(0, &result_bytes[..]);
+
+				Ok(())
+			},
+			Err(e) => {
+				trace!(target: "builtin", "Eip2539G2MultiExp error: {:?}", e);
+
+				Err("Eip2539G2MultiExp error")
+			}
+		}
+	}
+}
+
+impl Implementation for Eip2539Pairing {
+	fn execute(&self, input: &[u8], output: &mut BytesRef) -> Result<(), &'static str> {
+		let result = EIP2539Executor::pair(input);
+
+		match result {
+			Ok(result_bytes) => {
+				output.write(0, &result_bytes[..]);
+
+				Ok(())
+			},
+			Err(e) => {
+				trace!(target: "builtin", "Eip2539Pairing error: {:?}", e);
+
+				Err("Eip2539Pairing error")
 			}
 		}
 	}
