@@ -94,10 +94,6 @@ enum Pricing {
 	Bls12ConstOperations(Bls12ConstOperations),
 	Bls12MultiexpG1(Bls12MultiexpPricerG1),
 	Bls12MultiexpG2(Bls12MultiexpPricerG2),
-	Eip2539Pairing(Eip2539PairingPricer),
-	Eip2539ConstOperations(Eip2539ConstOperations),
-	Eip2539MultiexpG1(Eip2539MultiexpPricerG1),
-	Eip2539MultiexpG2(Eip2539MultiexpPricerG2),	
 }
 
 impl Pricer for Pricing {
@@ -112,10 +108,12 @@ impl Pricer for Pricing {
 			Pricing::Bls12ConstOperations(inner) => inner.cost(input),
 			Pricing::Bls12MultiexpG1(inner) => inner.cost(input),
 			Pricing::Bls12MultiexpG2(inner) => inner.cost(input),
-			Pricing::Eip2539Pairing(inner) => inner.cost(input),
-			Pricing::Eip2539ConstOperations(inner) => inner.cost(input),
-			Pricing::Eip2539MultiexpG1(inner) => inner.cost(input),
-			Pricing::Eip2539MultiexpG2(inner) => inner.cost(input),
+
+			// // All are same as 2537
+			// Pricing::Eip2539Pairing(inner) => inner.cost(input),
+			// Pricing::Eip2539ConstOperations(inner) => inner.cost(input),
+			// Pricing::Eip2539MultiexpG1(inner) => inner.cost(input),
+			// Pricing::Eip2539MultiexpG2(inner) => inner.cost(input),
 		}
 	}
 }
@@ -579,40 +577,6 @@ impl From<ethjson::spec::builtin::Pricing> for Pricing {
 					}
 				)
 			},
-
-			// TODO: differentiate
-			ethjson::spec::builtin::Pricing::Bls12ConstOperations(pricer) => {
-				Pricing::Bls12ConstOperations(Bls12ConstOperations {
-					price: pricer.price
-				})
-			},
-			ethjson::spec::builtin::Pricing::Bls12Pairing(pricer) => {
-				Pricing::Bls12Pairing(Bls12PairingPricer {
-						price : Bls12PairingPrice {
-							base: pricer.base,
-							pair: pricer.pair
-						}
-					}
-				)
-			},
-			ethjson::spec::builtin::Pricing::Bls12G1Multiexp(pricer) => {
-				Pricing::Bls12MultiexpG1(Bls12MultiexpPricerG1 {
-						base_price: Bls12ConstOperations {
-							price: pricer.base,
-						},
-						_marker: std::marker::PhantomData
-					}
-				)
-			},
-			ethjson::spec::builtin::Pricing::Bls12G2Multiexp(pricer) => {
-				Pricing::Eip2539MultiexpG2(Eip2539MultiexpPricerG2 {
-						base_price: Eip2539ConstOperations {
-							price: pricer.base
-						},
-						_marker: std::marker::PhantomData
-					}
-				)
-			},			
 		}
 	}
 }
@@ -736,8 +700,6 @@ impl Implementation for EthereumBuiltin {
 			EthereumBuiltin::Eip2539G2Mul(inner) => inner.execute(input, output),
 			EthereumBuiltin::Eip2539G2MultiExp(inner) => inner.execute(input, output),
 			EthereumBuiltin::Eip2539Pairing(inner) => inner.execute(input, output),
-		
-		
 		}
 	}
 }

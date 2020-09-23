@@ -199,6 +199,69 @@
 					"bls12_const_operations": { "price": 110000 }
 				}
 			}
+		},
+		"0000000000000000000000000000000000000013": {
+			"builtin": {
+				"name": "bls12_377_g1_add",
+				"activate_at": "0x0",
+				"pricing": {
+					"bls12_const_operations": { "price": 600 }
+				}
+			}
+		},
+		"0000000000000000000000000000000000000014": {
+			"builtin": {
+				"name": "bls12_377_g1_mul",
+				"activate_at": "0x0",
+				"pricing": {
+					"bls12_const_operations": { "price": 12000 }
+				}
+			}
+		},
+		"0000000000000000000000000000000000000015": {
+			"builtin": {
+				"name": "bls12_377_g1_multiexp",
+				"activate_at": "0x0",
+				"pricing": {
+					"bls12_g1_multiexp": { "base": 12000 }
+				}
+			}
+		},
+		"0000000000000000000000000000000000000016": {
+			"builtin": {
+				"name": "bls12_377_g2_add",
+				"activate_at": "0x0",
+				"pricing": {
+					"bls12_const_operations": { "price": 4500 }
+				}
+			}
+		},
+		"0000000000000000000000000000000000000017": {
+			"builtin": {
+				"name": "bls12_377_g2_mul",
+				"activate_at": "0x0",
+				"pricing": {
+					"bls12_const_operations": { "price": 55000 }
+				}
+			}
+		},
+		"0000000000000000000000000000000000000018": {
+			"builtin": {
+				"name": "bls12_377_g2_multiexp",
+				"activate_at": "0x0",
+				"pricing": {
+					"bls12_g2_multiexp": { "base": 55000 }
+				}
+			}
+		},
+		"0000000000000000000000000000000000000019": {
+			"builtin": {
+				"name": "bls12_377_pairing",
+				"activate_at": "0x0",
+				"pricing": {
+					"bls12_pairing": { "base": 115000, "pair": 23000 }
+				}
+			}
 		}
 	}
 }
